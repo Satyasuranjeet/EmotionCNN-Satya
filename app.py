@@ -1,6 +1,9 @@
 import cv2
 import numpy as np
 from tensorflow.keras.models import load_model
+from flask import Flask, request, jsonify
+
+app = Flask(__name__)
 
 class FaceEmotionDetector:
     def __init__(self, model_path):
@@ -13,12 +16,6 @@ class FaceEmotionDetector:
     def detect_emotion(self, image):
         """
         Detect faces in the image and predict their emotions
-        
-        Args:
-            image: numpy array of the image (BGR format from OpenCV)
-            
-        Returns:
-            List of tuples with (face_box, emotion, confidence)
         """
         # Convert to grayscale
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -52,20 +49,13 @@ class FaceEmotionDetector:
             emotion = self.emotions[emotion_idx]
             confidence = prediction[emotion_idx]
             
-            result.append(((x, y, w, h), emotion, confidence))
+            result.append((emotion, confidence))
         
         return result
     
     def visualize_results(self, image, results):
         """
         Draw the results on the image
-        
-        Args:
-            image: Original image
-            results: List of (face_box, emotion, confidence) tuples
-            
-        Returns:
-            Image with annotated faces and emotions
         """
         output = image.copy()
         
@@ -81,49 +71,52 @@ class FaceEmotionDetector:
         
         return output
 
+# Initialize the detector with the model path
+model_path = "lightweight_emotion_model_best.h5"
+detector = FaceEmotionDetector(model_path)
 
-def demo_with_webcam(model_path):
-    """Run a demo using webcam feed"""
-    detector = FaceEmotionDetector(model_path)
+@app.route('/detect_emotion', methods=['POST'])
+def detect_emotion():
+    if 'image' not in request.files:
+        return jsonify({"error": "No image file provided"}), 400
     
-    # Open webcam
+    file = request.files['image']
+    image = cv2.imdecode(np.frombuffer(file.read(), np.uint8), cv2.IMREAD_COLOR)
+    
+    results = detector.detect_emotion(image)
+    
+    if not results:
+        return jsonify({"error": "No face detected"}), 400
+    
+    max_confidence_emotion = max(results, key=lambda x: x[1])
+    
+    return jsonify({"emotion": max_confidence_emotion[0]})
+
+@app.route('/webcam_demo', methods=['GET'])
+def webcam_demo():
+    """Run a demo using webcam feed"""
     cap = cv2.VideoCapture(0)
     
     if not cap.isOpened():
-        print("Could not open webcam")
-        return
-    
-    print("Press 'q' to quit")
+        return jsonify({"error": "Could not open webcam"}), 500
     
     while True:
-        # Read frame
         ret, frame = cap.read()
         
         if not ret:
-            print("Failed to grab frame")
             break
         
-        # Detect emotions
         results = detector.detect_emotion(frame)
-
-        # Visualize results
         output_frame = detector.visualize_results(frame, results)
         
-        # Display result
         cv2.imshow('Emotion Detection', output_frame)
         
-        # Break on 'q' key
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
     
-    # Release resources
     cap.release()
     cv2.destroyAllWindows()
-
+    return jsonify({"message": "Webcam demo ended"}), 200
 
 if __name__ == "__main__":
-    # Path to your trained model
-    model_path = "lightweight_emotion_model_best.h5"
-    
-    # Run the webcam demo
-    demo_with_webcam(model_path)
+    app.run(host='0.0.0.0', port=5000)
