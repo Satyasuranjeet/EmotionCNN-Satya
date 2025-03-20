@@ -1,9 +1,6 @@
 import cv2
 import numpy as np
 from tensorflow.keras.models import load_model
-from flask import Flask, request, jsonify
-
-app = Flask(__name__)
 
 class FaceEmotionDetector:
     def __init__(self, model_path):
@@ -17,7 +14,7 @@ class FaceEmotionDetector:
         faces = self.face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
         
         if len(faces) == 0:
-            return None
+            return None, []
         
         highest_confidence = 0.0
         best_emotion = "Neutral"
@@ -37,25 +34,28 @@ class FaceEmotionDetector:
                 highest_confidence = confidence
                 best_emotion = self.emotions[emotion_idx]
         
-        return best_emotion
+        return best_emotion, faces
 
 model_path = "lightweight_emotion_model_best.h5"
 detector = FaceEmotionDetector(model_path)
 
-@app.route('/detect_emotion', methods=['POST'])
-def detect_emotion():
-    if 'image' not in request.files:
-        return jsonify({"error": "No image file provided"}), 400
-    
-    file = request.files['image']
-    image = cv2.imdecode(np.frombuffer(file.read(), np.uint8), cv2.IMREAD_COLOR)
-    
-    best_emotion = detector.detect_emotion(image)
-    
-    if best_emotion is None:
-        return jsonify({"error": "No face detected"}), 400
-    
-    return jsonify({"emotion": best_emotion})
+cap = cv2.VideoCapture(0)
 
-if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=5000)
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        break
+    
+    best_emotion, faces = detector.detect_emotion(frame)
+    
+    if best_emotion and faces is not None:
+        for (x, y, w, h) in faces:
+            cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
+            cv2.putText(frame, best_emotion, (x, y-10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+    
+    cv2.imshow('Face Emotion Detector', frame)
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
