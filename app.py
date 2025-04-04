@@ -1,9 +1,11 @@
+from flask import Flask, request, jsonify
+from flask_cors import CORS
 import cv2
 import numpy as np
 from tensorflow.keras.models import load_model
-from flask import Flask, request, jsonify
 
 app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes and origins
 
 class FaceEmotionDetector:
     def __init__(self, model_path):
